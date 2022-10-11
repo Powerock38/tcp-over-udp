@@ -1,0 +1,5 @@
+*.o
+file_client
+file_server
+client
+server
