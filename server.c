@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -15,6 +16,11 @@ int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
 
   int reuse = 1;
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+  struct timeval tv;
+  tv.tv_sec = 30;
+  tv.tv_usec = 0;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
   memset((char *)addr_ptr, 0, sizeof(struct sockaddr_in));
   addr_ptr->sin_family = DOMAIN;
@@ -66,7 +72,6 @@ int main(int argc, char *argv[]) {
       close(server_socket);
 
       char msg_req[MSG_LENGTH];
-
       my_recv_str(c_sock, msg_req, &remote_addr);
 
       if (strncmp(msg_req, GET, strlen(GET)) == 0) {

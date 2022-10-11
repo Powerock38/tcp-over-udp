@@ -32,7 +32,7 @@ struct file_segment_with_no {
 
 void checkerr(long err, char *msg) {
   if (err < 0) {
-    printf("err = %ld | %s\n", err, msg);
+    printf("%s err = %ld\n", msg, err);
     exit(1);
   }
 }
