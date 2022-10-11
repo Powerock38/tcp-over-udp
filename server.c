@@ -54,58 +54,54 @@ int main(int argc, char *argv[]) {
       int c_sock = new_socket(&c_server_addr, c_port);
 
       // send SYN-ACK
-      my_send_str(server_socket, syn_ack, &remote_addr);
+      do {
+        my_send_str(server_socket, syn_ack, &remote_addr);
+      } while (!recv_control_str(server_socket, ACK, &remote_addr));
 
-      if (recv_control_str(server_socket, ACK, &remote_addr)) {
-        if (fork() != 0) {
-          close(c_sock);
-          continue;
+      if (fork() != 0) {
+        close(c_sock);
+        continue;
+      }
+
+      close(server_socket);
+
+      char msg_req[MSG_LENGTH];
+
+      my_recv_str(c_sock, msg_req, &remote_addr);
+
+      if (strncmp(msg_req, GET, strlen(GET)) == 0) {
+        char *filename = &msg_req[strlen(GET) + 1];
+
+        // read file
+        FILE *fp = fopen(filename, "r");
+        if (fp == NULL) {
+          printf("Error opening file %s\n", filename);
+          exit(1);
         }
 
-        close(server_socket);
+        struct file_segment_with_no seg;
+        seg.no = 1;
 
-        char msg_req[MSG_LENGTH];
+        // send file chunk by chunk
+        size_t bytes_read;
+        while ((bytes_read = fread(seg.data, 1, FILE_CHUNK_SIZE, fp)) > 0) {
+          seg.size = bytes_read;
 
-        my_recv_str(c_sock, msg_req, &remote_addr);
+          char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
+          sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
 
-        if (strncmp(msg_req, GET, strlen(GET)) == 0) {
-          char *filename = &msg_req[strlen(GET) + 1];
-
-          // read file
-          FILE *fp = fopen(filename, "r");
-          if (fp == NULL) {
-            printf("Error opening file %s\n", filename);
-            exit(1);
-          }
-
-          struct file_segment_with_no seg;
-          seg.no = 1;
-
-          // send file chunk by chunk
-          size_t bytes_read;
-          while ((bytes_read = fread(seg.data, 1, FILE_CHUNK_SIZE, fp)) > 0) {
-            seg.size = bytes_read;
+          do {
             my_send_bytes(c_sock, (char *)&seg, sizeof(struct file_segment_with_no), &remote_addr);
+          } while (!recv_control_str(c_sock, ack_with_no, &remote_addr));
 
-            char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
-            sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
-
-            if (recv_control_str(c_sock, ack_with_no, &remote_addr)) {
-              seg.no++;
-            } else {
-              exit(1);
-            }
-          }
-
-          fclose(fp);
-
-          my_send_str(c_sock, FIN, &remote_addr);
-        } else {
-          printf("Unknown request %s\n", msg_req);
+          seg.no++;
         }
 
+        fclose(fp);
+
+        my_send_str(c_sock, FIN, &remote_addr);
       } else {
-        printf("ACK not received, connection failed\n");
+        printf("Unknown request %s\n", msg_req);
       }
 
       close(c_sock);

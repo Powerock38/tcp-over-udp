@@ -35,12 +35,11 @@ int main(int argc, char *argv[]) {
   my_send_str(sock, SYN, &addr);
 
   char msg[MSG_LENGTH];
-
   my_recv_str(sock, msg, &addr);
 
   if (strncmp(msg, SYN_ACK, strlen(SYN_ACK)) == 0) {
     char str_port[PORT_LENGTH];
-    strncpy(str_port, msg + strlen(SYN_ACK), PORT_LENGTH);
+    strncpy(str_port, &msg[strlen(SYN_ACK)], PORT_LENGTH);
     unsigned short c_port = atoi(str_port);
 
     my_send_str(sock, ACK, &addr);
