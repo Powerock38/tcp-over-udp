@@ -24,9 +24,10 @@
 #define ACK_NO "ACK_"
 #define FIN "FIN"
 
-struct file_segment_with_no {
+struct segment {
   unsigned short no;
   size_t size;
+  unsigned int window_size;
   char data[FILE_CHUNK_SIZE];
 };
 
@@ -41,35 +42,35 @@ void printPID() {
   printf("[%d] ", getpid());
 }
 
-long my_send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
+long send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
   printPID();
   printf("Sending \"%s\" to %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, msg, strlen(msg) + 1, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
-  checkerr(n, "my_send_str");
+  checkerr(n, "send_str");
   return n;
 }
 
-long my_send_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
+long send_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
   printPID();
   printf("Sending %ld bytes to %s:%d\n", len, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, buffer, len, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
-  checkerr(n, "my_send_bytes");
+  checkerr(n, "send_bytes");
   return n;
 }
 
-long my_recv_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
+long recv_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
   socklen_t size = sizeof(struct sockaddr_in);
   ssize_t n = recvfrom(s, msg, MSG_LENGTH, 0, (struct sockaddr *)addr_ptr, &size);
-  checkerr(n, "my_recv_str");
+  checkerr(n, "recv_str");
   printPID();
   printf("Received \"%s\" from %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   return n;
 }
 
-long my_recv_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
+long recv_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
   socklen_t size = sizeof(struct sockaddr_in);
   ssize_t n = recvfrom(s, buffer, len, 0, (struct sockaddr *)addr_ptr, &size);
-  checkerr(n, "my_recv_bytes");
+  checkerr(n, "recv_bytes");
   printPID();
   printf("Received %ld bytes from %s:%d\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   return n;
@@ -80,7 +81,7 @@ long recv_control_str(int s, char *control_str, struct sockaddr_in *addr_ptr) {
   printf("Waiting for \"%s\" on socket %d...\n", control_str, s);
 
   char msg[MSG_LENGTH];
-  long n = my_recv_str(s, msg, addr_ptr);
+  long n = recv_str(s, msg, addr_ptr);
 
   if (strncmp(msg, control_str, strlen(control_str)) != 0) {
     printPID();

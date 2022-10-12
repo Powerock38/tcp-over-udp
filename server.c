@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -16,11 +17,6 @@ int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
 
   int reuse = 1;
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-  struct timeval tv;
-  tv.tv_sec = 30;
-  tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
   memset((char *)addr_ptr, 0, sizeof(struct sockaddr_in));
   addr_ptr->sin_family = DOMAIN;
@@ -38,7 +34,7 @@ int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
 
 void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   char msg_req[MSG_LENGTH];
-  my_recv_str(c_sock, msg_req, c_addr_ptr);
+  recv_str(c_sock, msg_req, c_addr_ptr);
 
   if (strncmp(msg_req, GET, strlen(GET)) == 0) {
     char *filename = &msg_req[strlen(GET) + 1];
@@ -50,27 +46,49 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       exit(1);
     }
 
-    struct file_segment_with_no seg;
-    seg.no = 1;
+    fd_set read_set;
+    FD_ZERO(&read_set);
+
+    struct timeval timeout;
+    timeout.tv_sec = 30;
+    timeout.tv_usec = 0;
+
+    struct timeval polling;
+    polling.tv_sec = 0;
+    polling.tv_usec = 0;
+
+    struct segment seg;
+    seg.no = 0;
+    seg.window_size = 5;
+    unsigned int window_current_size = 0;
 
     // send file chunk by chunk
-    size_t bytes_read;
-    while ((bytes_read = fread(seg.data, 1, FILE_CHUNK_SIZE, fp)) > 0) {
-      seg.size = bytes_read;
-
+    while ((seg.size = fread(seg.data, 1, FILE_CHUNK_SIZE, fp)) > 0) {
       char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
       sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
 
-      do {
-        my_send_bytes(c_sock, (char *)&seg, sizeof(struct file_segment_with_no), c_addr_ptr);
-      } while (!recv_control_str(c_sock, ack_with_no, c_addr_ptr));
-
+      send_bytes(c_sock, (char *)&seg, sizeof(struct segment), c_addr_ptr);
       seg.no++;
+
+      // poll for ACK
+      struct timeval *time_ptr = window_current_size == seg.window_size ? &timeout : &polling;
+      FD_SET(c_sock, &read_set);
+      select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
+      if (FD_ISSET(c_sock, &read_set)) {
+        recv_control_str(c_sock, ack_with_no, c_addr_ptr);
+        window_current_size = 0;
+      }
+
+      if (window_current_size < seg.window_size) {
+        window_current_size++;
+      } else {
+        window_current_size = 0;
+      }
     }
 
     fclose(fp);
 
-    my_send_str(c_sock, FIN, c_addr_ptr);
+    send_str(c_sock, FIN, c_addr_ptr);
   } else {
     printf("Unknown request %s\n", msg_req);
   }
@@ -102,7 +120,7 @@ int main(int argc, char *argv[]) {
 
       // send SYN-ACK
       do {
-        my_send_str(server_socket, syn_ack, &c_addr);
+        send_str(server_socket, syn_ack, &c_addr);
       } while (!recv_control_str(server_socket, ACK, &c_addr));
 
       if (fork() == 0) {
