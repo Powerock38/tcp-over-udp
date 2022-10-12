@@ -30,6 +30,7 @@ int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
   int err = bind(sock, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(err, "bind");
 
+  printPID();
   printf("New UDP socket %d listening on port %d\n", sock, port);
 
   return sock;
