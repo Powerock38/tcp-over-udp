@@ -36,6 +36,46 @@ int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
   return sock;
 }
 
+void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
+  char msg_req[MSG_LENGTH];
+  my_recv_str(c_sock, msg_req, c_addr_ptr);
+
+  if (strncmp(msg_req, GET, strlen(GET)) == 0) {
+    char *filename = &msg_req[strlen(GET) + 1];
+
+    // read file
+    FILE *fp = fopen(filename, "r");
+    if (fp == NULL) {
+      printf("Error opening file %s\n", filename);
+      exit(1);
+    }
+
+    struct file_segment_with_no seg;
+    seg.no = 1;
+
+    // send file chunk by chunk
+    size_t bytes_read;
+    while ((bytes_read = fread(seg.data, 1, FILE_CHUNK_SIZE, fp)) > 0) {
+      seg.size = bytes_read;
+
+      char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
+      sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
+
+      do {
+        my_send_bytes(c_sock, (char *)&seg, sizeof(struct file_segment_with_no), c_addr_ptr);
+      } while (!recv_control_str(c_sock, ack_with_no, c_addr_ptr));
+
+      seg.no++;
+    }
+
+    fclose(fp);
+
+    my_send_str(c_sock, FIN, c_addr_ptr);
+  } else {
+    printf("Unknown request %s\n", msg_req);
+  }
+}
+
 int main(int argc, char *argv[]) {
   if (argc != 2) {
     printf("Usage: %s <udp port>\n", argv[0]);
@@ -48,9 +88,9 @@ int main(int argc, char *argv[]) {
   unsigned short client_no = 1;
 
   while (1) {
-    struct sockaddr_in remote_addr;
+    struct sockaddr_in c_addr;
 
-    if (recv_control_str(server_socket, SYN, &remote_addr)) {
+    if (recv_control_str(server_socket, SYN, &c_addr)) {
       // SYN-ACK <port>
       char syn_ack[sizeof(SYN_ACK) + PORT_LENGTH + 1];
       short c_port = server_port + client_no++;
@@ -62,56 +102,17 @@ int main(int argc, char *argv[]) {
 
       // send SYN-ACK
       do {
-        my_send_str(server_socket, syn_ack, &remote_addr);
-      } while (!recv_control_str(server_socket, ACK, &remote_addr));
+        my_send_str(server_socket, syn_ack, &c_addr);
+      } while (!recv_control_str(server_socket, ACK, &c_addr));
 
-      if (fork() != 0) {
+      if (fork() == 0) {
+        close(server_socket);
+        handle_client(c_sock, &c_addr);
         close(c_sock);
-        continue;
-      }
-
-      close(server_socket);
-
-      char msg_req[MSG_LENGTH];
-      my_recv_str(c_sock, msg_req, &remote_addr);
-
-      if (strncmp(msg_req, GET, strlen(GET)) == 0) {
-        char *filename = &msg_req[strlen(GET) + 1];
-
-        // read file
-        FILE *fp = fopen(filename, "r");
-        if (fp == NULL) {
-          printf("Error opening file %s\n", filename);
-          exit(1);
-        }
-
-        struct file_segment_with_no seg;
-        seg.no = 1;
-
-        // send file chunk by chunk
-        size_t bytes_read;
-        while ((bytes_read = fread(seg.data, 1, FILE_CHUNK_SIZE, fp)) > 0) {
-          seg.size = bytes_read;
-
-          char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
-          sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
-
-          do {
-            my_send_bytes(c_sock, (char *)&seg, sizeof(struct file_segment_with_no), &remote_addr);
-          } while (!recv_control_str(c_sock, ack_with_no, &remote_addr));
-
-          seg.no++;
-        }
-
-        fclose(fp);
-
-        my_send_str(c_sock, FIN, &remote_addr);
+        exit(0);
       } else {
-        printf("Unknown request %s\n", msg_req);
+        close(c_sock);
       }
-
-      close(c_sock);
-      exit(0);
     }
   }
 
