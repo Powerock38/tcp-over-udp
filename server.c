@@ -57,33 +57,54 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     polling.tv_sec = 0;
     polling.tv_usec = 0;
 
-    struct segment seg;
-    seg.no = 0;
-    seg.window_size = 5;
-    unsigned int window_current_size = 0;
+    unsigned int window_index = 0;
+
+    struct segment seg_buffer[BASE_WINDOW_SIZE];
 
     // send file chunk by chunk
-    while ((seg.size = fread(seg.data, 1, FILE_CHUNK_SIZE, fp)) > 0) {
-      char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
-      sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
+    while (1) {
+      struct segment seg = {
+          .no = 0,
+          .window_size = BASE_WINDOW_SIZE,
+      };
 
+      seg.size = fread(seg.data, 1, FILE_CHUNK_SIZE, fp);
+      if (seg.size == 0) {
+        break;
+      }
+
+      printf("window_index: %d\n", window_index);
+
+      // send data and save in seg_buffer
       send_bytes(c_sock, (char *)&seg, sizeof(struct segment), c_addr_ptr);
-      seg.no++;
+      // seg_buffer[window_index] = seg;
 
-      // poll for ACK
-      struct timeval *time_ptr = window_current_size == seg.window_size ? &timeout : &polling;
+      // poll for ACK, or wait until timeout if window is full
+      struct timeval *time_ptr = window_index == seg.window_size ? &timeout : &polling;
       FD_SET(c_sock, &read_set);
       select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
+
+      printf("after send\n");
+
       if (FD_ISSET(c_sock, &read_set)) {
-        recv_control_str(c_sock, ack_with_no, c_addr_ptr);
-        window_current_size = 0;
+        printf("isset\n");
+
+        // prepare the expected ack string
+        char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
+        sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
+
+        if (recv_control_str(c_sock, ack_with_no, c_addr_ptr)) {
+          // ack received, reset window
+          window_index = 0;
+        }
+      } else {
+        printf("not isset\n");
       }
 
-      if (window_current_size < seg.window_size) {
-        window_current_size++;
-      } else {
-        window_current_size = 0;
-      }
+      printf("after recv\n");
+
+      window_index++;
+      seg.no++;
     }
 
     fclose(fp);

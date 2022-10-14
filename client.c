@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
       exit(1);
     }
 
-    unsigned int window_current_size = 0;
+    unsigned int window_index = 0;
     struct segment seg;
     while (1) {
       recv_bytes(sock, (char *)&seg, sizeof(struct segment), &addr);
@@ -68,18 +68,20 @@ int main(int argc, char *argv[]) {
 
       fwrite(seg.data, 1, seg.size, fp);
 
-      // sleep(5);
+      // sleep(1);
 
-      if (window_current_size < seg.window_size) {
-        window_current_size++;
-      } else {
-        window_current_size = 0;
+      printf("window_index: %d\n", window_index);
+
+      if (window_index == seg.window_size) {
+        window_index = 0;
 
         // send ACK
         char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
         sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
         send_str(sock, ack_with_no, &addr);
       }
+
+      window_index++;
     }
 
     fclose(fp);

@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #define DOMAIN AF_INET
@@ -16,6 +17,7 @@
 #define PORT_LENGTH 5
 #define ACK_NO_LENGTH 5
 #define FILE_CHUNK_SIZE 1024
+#define BASE_WINDOW_SIZE 5
 
 #define SYN "SYN"
 #define SYN_ACK "SYN-ACK "
@@ -39,7 +41,7 @@ void checkerr(long err, char *msg) {
 }
 
 void printPID() {
-  printf("[%d] ", getpid());
+  printf("(%ld) [%d] ", time(0), getpid());
 }
 
 long send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
@@ -72,7 +74,7 @@ long recv_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
   ssize_t n = recvfrom(s, buffer, len, 0, (struct sockaddr *)addr_ptr, &size);
   checkerr(n, "recv_bytes");
   printPID();
-  printf("Received %ld bytes from %s:%d\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
+  printf("Received %ld bytes from %s:%d (seg %d)\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port), ((struct segment *)buffer)->no);
   return n;
 }
 
